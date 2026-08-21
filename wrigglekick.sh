@@ -1079,6 +1079,7 @@
     local endNodeSelectGroup="${2}"
     local hiddenOption="${3}"
     local allCharCount="${4}"
+    local nodeNoWidth="${#maxNodeCnt}"
 
     savePrevTreeCmd "${action}" "${indexNo}" "${hiddenOption}"
 
@@ -1164,7 +1165,7 @@
         printf "%s " "${symbols}"
 
         # ノードタイトルの先頭にノード番号とピリオドを付与
-        printf "%2d. %s\n" "${cnt}" "$( getNodeTitle ${cnt} )"
+        printf "%${nodeNoWidth}d. %s\n" "${cnt}" "$( getNodeTitle ${cnt} )"
 
       done
 
