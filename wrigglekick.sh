@@ -1164,7 +1164,7 @@
         printf "%s " "${symbols}"
 
         # ノードタイトルの先頭にノード番号とピリオドを付与
-        echo "${cnt}. $( getNodeTitle ${cnt} )"
+        printf "%2d. %s\n" "${cnt}" "$( getNodeTitle ${cnt} )"
 
       done
 
@@ -2368,7 +2368,7 @@
       fi
     fi
 
-    readonly previousTreeCommand='tl'
+    readonly previousTreeCommand='t'
     readonly previousIndexNo=''
     readonly previousHideFlag=''
 
