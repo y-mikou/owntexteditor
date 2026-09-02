@@ -66,7 +66,7 @@
     echo '　　　　　gc....自分の配下ノードを含んだ文字数を通知する'
     echo '　　　　　s.....指定ノードに表示シンボルを設定する。追加引数でシンボルを指定(1文字)'
     echo '　　　　　o.....自分の配下ノードを含んだ範囲を別ファイル出力する。追加引数で出力ファイル名'
-    echo '　　　　　cp....指定ノードを自身の直後へコピー（単一ノードのみ）。追加引数は禁止'
+    echo '　　　　　cp....対象ノードを、指定したノードの直後へ複製。'
     echo '　　　　　数字...対象ノードを編集(eと引数3を省略)'
     echo '　引数3:動作対象ノード番号/ノード指定の無い動作ではオプション'
     echo '　引数4:動作指定ごとに必要なオプション'
@@ -417,13 +417,12 @@
   function help-cp {
     clear
     echo '■cpコマンド ヘルプ'
-    echo '書式: (bash) wrigglekick.sh [対象ファイル] cp [対象ノード番号]'
+    echo '書式: (bash) wrigglekick.sh [対象ファイル] cp [対象ノード番号] [指定ノード番号]'
     echo ''
-    echo 'cpコマンドは、指定した**単一ノード**のタイトル行とその直後に続く非ヘッダ行のみを複製し、複製ブロックを元のノードの直後に挿入します。'
-    echo '複製されたノードのタイトルは「元タイトルのコピー [進捗,記号,不可視]」という形式になります。'
+    echo 'cpコマンドは、指定した**単一ノード**を指定のノードの直後に挿入します。'
+    echo '複製されたノードのタイトルは「元タイトル [進捗,記号,不可視]」という形式でそのまま追加されます。'
     echo ''
     echo '注意事項:'
-    echo ' - 第2引数（終了ノード番号）は受け取りません。与えた場合はエラーになります。'
     echo ' - 指定ノードの配下（子ノード）は複製されません。'
   }
 
@@ -1925,74 +1924,57 @@
 
 : "ノードコピーコマンド" && {
  ##############################################################################
- # cp: 対象のノード(と配下)をコピーして自身の直後に挿入する
- # 引数:なし(グローバルのみ)
+ # cp: fromノードをtoノードの下へ複製する
+ # 引数: fromノード番号 toノード番号
  ##############################################################################
  function copyNode {
 
-  # 引数チェック: indexNo 必須、option は未指定であること
-  if [[ -z "${indexNo}" ]]; then
-    echo 'cp: ノード番号を指定してください'
+  local srcNode="${indexNo}"
+  local dstNode="${option}"
+
+  if [[ -z "${srcNode}" ]]; then
+    echo 'cp: 複製元ノード番号を指定してください'
     read -s -n 1 c
     return 1
   fi
-  if [[ -n "${option}" ]]; then
-    echo 'cp: 第2引数は不要です'
+  if [[ -z "${dstNode}" ]]; then
+    echo 'cp: 複製先ノード番号を指定してください'
+    read -s -n 1 c
+    return 1
+  fi
+  if [[ ! "${srcNode}" =~ ^[0-9]+$ ]] || [[ ${srcNode} -le 0 ]] || [[ ${srcNode} -gt ${maxNodeCnt} ]]; then
+    echo "cp: 複製元ノード番号が不正です: ${srcNode}"
+    read -s -n 1 c
+    return 1
+  fi
+  if [[ ! "${dstNode}" =~ ^[0-9]+$ ]] || [[ ${dstNode} -le 0 ]] || [[ ${dstNode} -gt ${maxNodeCnt} ]]; then
+    echo "cp: 複製先ノード番号が不正です: ${dstNode}"
     read -s -n 1 c
     return 1
   fi
 
-  # コピー対象は単一ノードのみ: タイトル行と直後の非ヘッダ行を抽出
-  local selectNodeLineFromTo="$( getLineNo ${indexNo} '' )"
-  local selectNodeArray=(${selectNodeLineFromTo})
-  local startLineSelectNode=${selectNodeArray[0]}
-  local endLineSelectNode=${selectNodeArray[1]}
+  local startLineSelectNode
+  startLineSelectNode=$(getLineNo "${srcNode}" 1)
+  local endLineSelectNode
+  endLineSelectNode=$(getLineNo "${srcNode}" 9)
 
-  # タイトル行と、タイトル直後の'#'で始まる行が現れるまでの非ヘッダ行のみを抽出
-  sed -n "${startLineSelectNode},${endLineSelectNode}p" "${inputFile}" | awk 'NR==1{print; next} /^#/ {exit} {print}' > "${tmpfileSelect}"
+  sed -n "${startLineSelectNode},${endLineSelectNode}p" "${inputFile}" > "${tmpfileSelect}"
 
-  # 先頭行(タイトル行)を書き換えて「のコピー」を付与
-  local titleLine
-  titleLine=$( sed -n '1p' "${tmpfileSelect}" )
-  local depth_markers
-  depth_markers="$( echo "${titleLine}" | sed -n 's/^\(#+\).*$/\1/p' )"
-  local withoutDepth
-  withoutDepth="${titleLine##*# }"
-  local title
-  title="${withoutDepth%%\[*}"
-  title="${title% }"
-  local progress
-  progress="$( parseMetadata "${withoutDepth}" 1 )"
-  local symbol
-  symbol="$( parseMetadata "${withoutDepth}" 2 )"
-  symbol="${symbol:0:1}"
-  local hideFlag
-  hideFlag="$( parseMetadata "${withoutDepth}" 3 )"
-  hideFlag="${hideFlag:0:1}"
+  local dstEndLine
+  dstEndLine=$(getLineNo "${dstNode}" 9)
 
-  local newTitleLine="${depth_markers} ${title}のコピー [${progress},${symbol},${hideFlag}]"
-  # 先頭行を置換
-  sed -i "1c ${newTitleLine}" "${tmpfileSelect}"
-
-  # 挿入位置は抽出したtmpfileSelectの行数分だけ進めた行の直後
-  local tmpLinesCount
-  tmpLinesCount=$(wc -l < "${tmpfileSelect}" | tr -d ' ')
-  local insertAfterLine=$(( ${startLineSelectNode} + ${tmpLinesCount} - 1 ))
-
-  if [[ ${insertAfterLine} -ge ${#fileLines[@]} ]]; then
-    # 末尾に追加
+  if [[ ${dstEndLine} -ge ${#fileLines[@]} ]]; then
     cat "${inputFile}" "${tmpfileSelect}" > "${tmpfile1}"
     cat "${tmpfile1}" > "${inputFile}"
   else
-    head -n "${insertAfterLine}" "${inputFile}" > "${tmpfileHeader}"
-    tail -n +$(( ${insertAfterLine} + 1 )) "${inputFile}" > "${tmpfileFooter}"
+    head -n "${dstEndLine}" "${inputFile}" > "${tmpfileHeader}"
+    tail -n +$(( ${dstEndLine} + 1 )) "${inputFile}" > "${tmpfileFooter}"
     cat "${tmpfileHeader}" "${tmpfileSelect}" "${tmpfileFooter}" > "${tmpfile1}"
     cat "${tmpfile1}" > "${inputFile}"
   fi
 
   displayLastTree
   exit 0
-
  }
 
 }
@@ -2369,7 +2351,7 @@
       fi
     fi
 
-    readonly previousTreeCommand='t'
+    readonly previousTreeCommand='ta'
     readonly previousIndexNo=''
     readonly previousHideFlag=''
 
